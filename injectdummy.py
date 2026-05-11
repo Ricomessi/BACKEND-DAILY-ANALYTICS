@@ -4,11 +4,11 @@ from datetime import datetime, timedelta
 
 # ─── KONFIGURASI DATABASE ───
 DB_CONFIG = {
-    "dbname": "mbasystem",
-    "user": "postgres",
-    "password": "1234",
-    "host": "127.0.0.1",
-    "port": 5433
+    "user": os.environ.get("DB_USER", "postgres"),
+    "password": os.environ.get("DB_PASS", "~jr}J]0k1~,7e+]O"),
+    "database": os.environ.get("DB_NAME", "mbasystem"),
+    "host": os.environ.get("DB_HOST", "34.59.60.237"),
+    "port": os.environ.get("DB_PORT", "5432")
 }
 
 # ─── DATA KATEGORI (UPDATED) ───
