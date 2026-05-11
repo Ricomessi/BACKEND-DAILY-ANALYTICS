@@ -1,8 +1,10 @@
 import psycopg2
+import os
 import random
 from datetime import datetime, timedelta
 
 # ─── KONFIGURASI DATABASE ───
+
 DB_CONFIG = {
     "user": os.environ.get("DB_USER", "postgres"),
     "password": os.environ.get("DB_PASS", "~jr}J]0k1~,7e+]O"),

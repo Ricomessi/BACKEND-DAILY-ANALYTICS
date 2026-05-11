@@ -261,6 +261,8 @@ def get_daily_analytics():
                     "maxDuration": math.ceil(max(durations)),
                     "minDuration": math.ceil(min(durations))
                 })
+                
+        
 
         # --- 3. Camera Data ---
         action_by_camera = []
@@ -334,11 +336,28 @@ def get_daily_analytics():
         total_attentive_duration = sum((r['duration'] or 0) for r in rows if r['is_attentive'])
         avg_att_all = round((total_attentive_duration / total_duration_all * 100), 1) if total_duration_all > 0 else 0
 
+        # --- 7. Gaze Segment Distribution (Histogram Durasi) ---
+        # Kelompokkan durasi atensi ke dalam "buckets"
+        buckets = {"0-5s": 0, "6-15s": 0, "16-30s": 0, "31-60s": 0, ">60s": 0}
+        
+        for r in rows:
+            if r['is_attentive']:
+                d = r['duration'] or 0
+                if d <= 5: buckets["0-5s"] += 1
+                elif d <= 15: buckets["6-15s"] += 1
+                elif d <= 30: buckets["16-30s"] += 1
+                elif d <= 60: buckets["31-60s"] += 1
+                else: buckets[">60s"] += 1
+                
+        # Format sesuai permintaan frontend Recharts
+        gaze_segments = [{"range": k, "count": v} for k, v in buckets.items()]
+
         cur.close()
         conn.close()
 
         return jsonify({
             "status": "success",
+            "gaze_segments": gaze_segments,
             "kpis": {
                 "total_detections": total_segments, 
                 "dominant_action": dom_action,
@@ -357,6 +376,8 @@ def get_daily_analytics():
             "action_by_camera": action_by_camera,
             "hourly_data": hourly_data
         })
+        
+    
 
     except Exception as e:
         print("Error Backend Flask:", e)
