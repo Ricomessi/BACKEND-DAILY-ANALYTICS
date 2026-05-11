@@ -1,4 +1,5 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request  # <-- Tambahkan request
+import calendar
 from flask_cors import CORS
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -34,6 +35,121 @@ def calculate_entropy(counts_dict):
     # Hitung entropy base 2
     ent = entropy(probabilities, base=2)
     return round(ent, 2)
+
+# --- HELPER: Mapping Nama Bulan ke Angka ---
+MONTH_MAP = {
+    "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+    "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+}
+
+@app.route('/api/analytics/monthly', methods=['GET'])
+def get_monthly_analytics():
+    try:
+        # 1. Ambil parameter dari frontend (default ke March 2026 jika kosong)
+        month_str = request.args.get('month', 'March')
+        year_str = request.args.get('year', '2026')
+        
+        month_val = MONTH_MAP.get(month_str, 3)
+        year_val = int(year_str)
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 2. Query agregasi per hari dalam satu bulan tertentu
+        # Menggunakan mode() WITHIN GROUP untuk mencari data yang paling sering muncul (dominan)
+        cur.execute("""
+            SELECT 
+                EXTRACT(DAY FROM start_time) as day_of_month,
+                COUNT(*) as total_actions,
+                SUM(duration) as total_duration,
+                SUM(CASE WHEN is_attentive THEN duration ELSE 0 END) as attentive_duration,
+                SUM(CASE WHEN yolo_action = 'Fallen / Lying' OR emotion IN ('Angry', 'Fearful') THEN 1 ELSE 0 END) as anomalies_count,
+                mode() WITHIN GROUP (ORDER BY yolo_action) as dominant_action,
+                mode() WITHIN GROUP (ORDER BY emotion) as dominant_emotion,
+                mode() WITHIN GROUP (ORDER BY EXTRACT(HOUR FROM start_time)) as peak_hour
+            FROM multimodal_tracking
+            WHERE EXTRACT(YEAR FROM start_time) = %s 
+              AND EXTRACT(MONTH FROM start_time) = %s
+            GROUP BY EXTRACT(DAY FROM start_time)
+            ORDER BY day_of_month ASC
+        """, (year_val, month_val))
+        
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # 3. Format data agar sesuai dengan kebutuhan Frontend (30/31 Hari Penuh)
+        # Cari tahu bulan ini ada berapa hari (misal Feb = 28, Mar = 31)
+        num_days_in_month = calendar.monthrange(year_val, month_val)[1]
+        
+        # Jadikan dictionary untuk pencarian cepat berdasarkan tanggal
+        daily_stats = {int(r['day_of_month']): r for r in rows}
+        
+        trendData = []
+        tableData = []
+
+        for day in range(1, num_days_in_month + 1):
+            stat = daily_stats.get(day)
+            
+            if stat:
+                # Jika ada data di hari tersebut
+                tot_dur = stat['total_duration'] or 0
+                att_dur = stat['attentive_duration'] or 0
+                attention_avg = int((att_dur / tot_dur * 100)) if tot_dur > 0 else 0
+                
+                anomalies = int(stat['anomalies_count'] or 0)
+                total_actions = int(stat['total_actions'] or 0)
+                
+                # Format jam puncak (misal 8 -> "08:00-09:00")
+                ph = int(stat['peak_hour']) if stat['peak_hour'] is not None else 0
+                peak_hour_str = f"{ph:02d}:00-{(ph+1)%24:02d}:00"
+                
+                dominant_action = stat['dominant_action'] or "None"
+                dominant_emotion = stat['dominant_emotion'] or "Neutral"
+            else:
+                # Jika hari tersebut tidak ada aktivitas sama sekali (kosong)
+                attention_avg = 0
+                anomalies = 0
+                total_actions = 0
+                peak_hour_str = "-"
+                dominant_action = "-"
+                dominant_emotion = "-"
+            
+            # Tentukan status anomali sesuai logika frontend
+            status = "critical" if anomalies >= 5 else "warning" if anomalies >= 3 else "normal"
+            
+            # A. Data untuk Recharts (Line Chart)
+            trendData.append({
+                "day": f"Day {day}",
+                "actions": total_actions,
+                "attention": attention_avg,
+                "emotionalSpikes": anomalies # Menggunakan total anomali sebagai indikator emosi ekstrem
+            })
+            
+            # B. Data untuk Shadcn Table
+            tableData.append({
+                "date": f"{year_val}-{month_val:02d}-{day:02d}",
+                "peakHour": peak_hour_str,
+                "action": dominant_action,
+                "attention": attention_avg,
+                "emotion": dominant_emotion,
+                "anomalies": anomalies,
+                "anomalyStatus": status
+            })
+
+        return jsonify({
+            "status": "success",
+            "month": month_str,
+            "year": year_val,
+            "data": {
+                "trendData": trendData,
+                "tableData": tableData
+            }
+        })
+
+    except Exception as e:
+        print("Error Get Monthly Analytics:", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/analytics/daily', methods=['GET'])
 def get_daily_analytics():
@@ -245,6 +361,9 @@ def get_daily_analytics():
     except Exception as e:
         print("Error Backend Flask:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
+    
+    
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
