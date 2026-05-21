@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request  # <-- Tambahkan request
+from flask import Flask, jsonify, request  
 import calendar
 from flask_cors import CORS
 import psycopg2
@@ -30,13 +30,10 @@ def calculate_entropy(counts_dict):
     values = list(counts_dict.values())
     if not values or sum(values) == 0:
         return 0.0
-    # Konversi ke probabilitas
     probabilities = [v / sum(values) for v in values if v > 0]
-    # Hitung entropy base 2
     ent = entropy(probabilities, base=2)
     return round(ent, 2)
 
-# --- HELPER: Mapping Nama Bulan ke Angka ---
 MONTH_MAP = {
     "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
     "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
@@ -45,18 +42,14 @@ MONTH_MAP = {
 @app.route('/api/analytics/monthly', methods=['GET'])
 def get_monthly_analytics():
     try:
-        # 1. Ambil parameter dari frontend (default ke March 2026 jika kosong)
         month_str = request.args.get('month', 'March')
         year_str = request.args.get('year', '2026')
-        
         month_val = MONTH_MAP.get(month_str, 3)
         year_val = int(year_str)
         
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 2. Query agregasi per hari dalam satu bulan tertentu
-        # Menggunakan mode() WITHIN GROUP untuk mencari data yang paling sering muncul (dominan)
         cur.execute("""
             SELECT 
                 EXTRACT(DAY FROM start_time) as day_of_month,
@@ -78,11 +71,7 @@ def get_monthly_analytics():
         cur.close()
         conn.close()
 
-        # 3. Format data agar sesuai dengan kebutuhan Frontend (30/31 Hari Penuh)
-        # Cari tahu bulan ini ada berapa hari (misal Feb = 28, Mar = 31)
         num_days_in_month = calendar.monthrange(year_val, month_val)[1]
-        
-        # Jadikan dictionary untuk pencarian cepat berdasarkan tanggal
         daily_stats = {int(r['day_of_month']): r for r in rows}
         
         trendData = []
@@ -92,22 +81,16 @@ def get_monthly_analytics():
             stat = daily_stats.get(day)
             
             if stat:
-                # Jika ada data di hari tersebut
                 tot_dur = stat['total_duration'] or 0
                 att_dur = stat['attentive_duration'] or 0
                 attention_avg = int((att_dur / tot_dur * 100)) if tot_dur > 0 else 0
-                
                 anomalies = int(stat['anomalies_count'] or 0)
                 total_actions = int(stat['total_actions'] or 0)
-                
-                # Format jam puncak (misal 8 -> "08:00-09:00")
                 ph = int(stat['peak_hour']) if stat['peak_hour'] is not None else 0
                 peak_hour_str = f"{ph:02d}:00-{(ph+1)%24:02d}:00"
-                
                 dominant_action = stat['dominant_action'] or "None"
                 dominant_emotion = stat['dominant_emotion'] or "Neutral"
             else:
-                # Jika hari tersebut tidak ada aktivitas sama sekali (kosong)
                 attention_avg = 0
                 anomalies = 0
                 total_actions = 0
@@ -115,18 +98,15 @@ def get_monthly_analytics():
                 dominant_action = "-"
                 dominant_emotion = "-"
             
-            # Tentukan status anomali sesuai logika frontend
             status = "critical" if anomalies >= 5 else "warning" if anomalies >= 3 else "normal"
             
-            # A. Data untuk Recharts (Line Chart)
             trendData.append({
                 "day": f"Day {day}",
                 "actions": total_actions,
                 "attention": attention_avg,
-                "emotionalSpikes": anomalies # Menggunakan total anomali sebagai indikator emosi ekstrem
+                "emotionalSpikes": anomalies
             })
             
-            # B. Data untuk Shadcn Table
             tableData.append({
                 "date": f"{year_val}-{month_val:02d}-{day:02d}",
                 "peakHour": peak_hour_str,
@@ -171,7 +151,6 @@ def get_daily_analytics():
             return jsonify({"status": "error", "message": "Belum ada data untuk hari ini."}), 404
 
         total_segments = len(rows)
-        # Filter duration None, amankan jika 0
         total_duration_all = sum((r['duration'] or 0) for r in rows)
 
         action_durations_total = {}
@@ -179,7 +158,6 @@ def get_daily_analytics():
         action_stats = {} 
         camera_counts = {}
         
-        # Untuk korelasi Action vs Attention per jam
         hourly_active_volume = [0] * 24
         hourly_attention_duration = [0] * 24
         hourly_total_duration = [0] * 24
@@ -188,8 +166,8 @@ def get_daily_analytics():
         for i in range(24):
             hourly_data.append({
                 "hour": f"{i:02d}:00",
-                "Standing": 0, "Walking": 0, "Running": 0, "Sitting": 0, "Loitering": 0,
-                "Neutral": 0, "Happy": 0, "Sad": 0, "Angry": 0, "Stressed": 0,
+                "Standing": 0, "Walking": 0, "Running": 0, "Sitting": 0, "Loitering": 0, "Fallen / Lying": 0, "Drinking": 0,
+                "Neutral": 0, "Happy": 0, "Sad": 0, "Angry": 0, "Fearful": 0,
                 "total_attentive_duration": 0, "total_hour_duration": 0,
                 "FOKUS": 0, "KIRI": 0, "KANAN": 0,
                 "DATAR": 0, "NUNDUK": 0, "DANGAK": 0,
@@ -234,7 +212,6 @@ def get_daily_analytics():
                 hd["total_attentive_duration"] += dur
                 hourly_attention_duration[hr] += dur
             
-            # Array khusus untuk korelasi (Active behaviors = Walking, Running)
             if act in ['Walking', 'Running']:
                 hourly_active_volume[hr] += dur
             
@@ -262,8 +239,6 @@ def get_daily_analytics():
                     "minDuration": math.ceil(min(durations))
                 })
                 
-        
-
         # --- 3. Camera Data ---
         action_by_camera = []
         for cam, cdata in camera_counts.items():
@@ -290,28 +265,19 @@ def get_daily_analytics():
                 hd["NUNDUK"] = round((hd["NUNDUK"]/t)*100, 1)
                 hd["DANGAK"] = round((hd["DANGAK"]/t)*100, 1)
             
-            # Normalisasi untuk bar chart (opsional)
             hd["Standing"] = min(100, hd["Standing"])
             hd["Walking"] = min(100, hd["Walking"])
             hd["Running"] = min(100, hd["Running"])
             hd["Sitting"] = min(100, hd["Sitting"])
 
-        # --- 5. ADVANCED INSIGHTS (Baru!) ---
-        
-        # A. Behavioral Entropy (H)
-        # Menghitung seberapa bervariasi aksi yang terjadi hari ini
+        # --- 5. ADVANCED INSIGHTS ---
         entropy_val = calculate_entropy(action_durations_total)
-        max_entropy = round(math.log2(5), 2) # Max 5 class (Standing, Walking, Running, Sitting, Loitering) = 2.32
+        max_entropy = round(math.log2(5), 2)
         
-        # B. Action-Attention Coupling (r)
-        # Korelasi Pearson antara Volume Aksi Aktif vs Skor Atensi per jam
-        # Filter jam yang ada datanya
         valid_hours_idx = [i for i, t in enumerate(hourly_total_duration) if t > 0]
         if len(valid_hours_idx) > 1:
             att_scores = [(hourly_attention_duration[i] / hourly_total_duration[i]) * 100 for i in valid_hours_idx]
             act_vols = [hourly_active_volume[i] for i in valid_hours_idx]
-            
-            # Cek standar deviasi biar Pearsonr gak error kalau datanya konstan/statis
             if np.std(att_scores) == 0 or np.std(act_vols) == 0:
                 coupling_r = 0.0
             else:
@@ -321,8 +287,6 @@ def get_daily_analytics():
             
         coupling_r = round(coupling_r, 2)
         
-        # C. Attention Decay
-        # Mengukur penurunan atensi dari siang (12:00) ke sore (18:00)
         afternoon_hours = [i for i in range(12, 19) if hourly_total_duration[i] > 0]
         if len(afternoon_hours) >= 2:
             scores = [(hourly_attention_duration[i] / hourly_total_duration[i]) * 100 for i in afternoon_hours]
@@ -336,10 +300,8 @@ def get_daily_analytics():
         total_attentive_duration = sum((r['duration'] or 0) for r in rows if r['is_attentive'])
         avg_att_all = round((total_attentive_duration / total_duration_all * 100), 1) if total_duration_all > 0 else 0
 
-        # --- 7. Gaze Segment Distribution (Histogram Durasi) ---
-        # Kelompokkan durasi atensi ke dalam "buckets"
+        # --- 7. Gaze Segment Distribution ---
         buckets = {"0-5s": 0, "6-15s": 0, "16-30s": 0, "31-60s": 0, ">60s": 0}
-        
         for r in rows:
             if r['is_attentive']:
                 d = r['duration'] or 0
@@ -348,21 +310,89 @@ def get_daily_analytics():
                 elif d <= 30: buckets["16-30s"] += 1
                 elif d <= 60: buckets["31-60s"] += 1
                 else: buckets[">60s"] += 1
-                
-        # Format sesuai permintaan frontend Recharts
         gaze_segments = [{"range": k, "count": v} for k, v in buckets.items()]
+        
+        # --- 8. Cross-Modal Features (UNTUK FRONTEND) ---
+        actions_list = ["Standing", "Walking", "Sitting", "Fallen / Lying", "Drinking"]
+        emotions_list = ["Neutral", "Happy", "Sad", "Angry", "Fearful"]
+        
+        transition_matrix = [[0 for _ in range(5)] for _ in range(5)]
+        emotion_action_matrix = [[0 for _ in range(5)] for _ in range(5)]
+        scatter_data = []
+        anomaly_timeline = []
+        
+        camera_history = {}
+        
+        for r in rows:
+            # -- Transition Matrix --
+            cam = r['camera_id']
+            raw_act = r['yolo_action']
+            act = raw_act if raw_act in actions_list else 'Standing'
+            emo = r['emotion'] if r['emotion'] in emotions_list else 'Neutral'
+            
+            if cam in camera_history:
+                prev_act = camera_history[cam]
+                if prev_act in actions_list and act in actions_list:
+                    prev_idx = actions_list.index(prev_act)
+                    curr_idx = actions_list.index(act)
+                    transition_matrix[prev_idx][curr_idx] += 1
+            camera_history[cam] = act
+
+            # -- Emotion-Action Matrix --
+            if emo in emotions_list and act in actions_list:
+                e_idx = emotions_list.index(emo)
+                a_idx = actions_list.index(act)
+                emotion_action_matrix[e_idx][a_idx] += 1
+                
+            # -- Scatter Data (Attention vs Emotion) --
+            # Hanya ambil sampel untuk scatter agar tidak berat di render frontend
+            if len(scatter_data) < 200:
+                 att_val = 100 if r['is_attentive'] else (0 if not r['duration'] else min((r['duration']*10), 80))
+                 e_idx = emotions_list.index(emo) if emo in emotions_list else 0
+                 scatter_data.append({
+                     "attention": att_val,
+                     "emotion": emo,
+                     "emotionIndex": e_idx,
+                     "size": (r['duration'] or 1) * 20 # Ukuran dot berdasarkan durasi
+                 })
+                 
+            # -- Anomaly Timeline --
+            # Tangkap anomali: Fallen atau Angry/Fearful (sesuai Master Class)
+            if act == 'Fallen / Lying':
+                anomaly_timeline.append({
+                    "hour": f"{int(r['hour']):02d}:{np.random.randint(0, 59):02d}", # Mock minute since DB only has hour
+                    "severity": "high",
+                    "type": "Safety",
+                    "label": f"Fallen detected on {cam}"
+                })
+            elif emo in ['Angry', 'Fearful']:
+                anomaly_timeline.append({
+                    "hour": f"{int(r['hour']):02d}:{np.random.randint(0, 59):02d}",
+                    "severity": "medium",
+                    "type": "Emotion",
+                    "label": f"{emo} expression on {cam}"
+                })
+
+        # Urutkan timeline berdasarkan jam
+        anomaly_timeline = sorted(anomaly_timeline, key=lambda x: x['hour'])[:15] # Ambil 15 terbaru
+        
+        # Normalisasi Emotion-Action Matrix untuk Heatmap (0.0 - 1.0)
+        for i in range(len(emotion_action_matrix)):
+            row_sum = sum(emotion_action_matrix[i])
+            if row_sum > 0:
+                emotion_action_matrix[i] = [round(val/row_sum, 2) for val in emotion_action_matrix[i]]
+
 
         cur.close()
         conn.close()
 
         return jsonify({
             "status": "success",
-            "gaze_segments": gaze_segments,
             "kpis": {
                 "total_detections": total_segments, 
                 "dominant_action": dom_action,
                 "dominant_emotion": dom_emotion,
-                "overall_attention": avg_att_all # <--- Fix 0% disini!
+                "overall_attention": avg_att_all
             },
             "insights": {
                 "entropy": entropy_val,
@@ -370,6 +400,14 @@ def get_daily_analytics():
                 "coupling_r": coupling_r,
                 "decay_rate": decay_rate
             },
+            "features": {
+                "transition_matrix": transition_matrix,
+                "emotion_action_matrix": emotion_action_matrix,
+                "scatter_data": scatter_data,
+                "segment_buckets": gaze_segments,
+                "anomaly_timeline": anomaly_timeline
+            },
+            "gaze_segments": gaze_segments, 
             "action_dominance": action_dominance,
             "emotion_dominance": emotion_dominance,
             "action_durations": action_durations_chart,
@@ -377,14 +415,9 @@ def get_daily_analytics():
             "hourly_data": hourly_data
         })
         
-    
-
     except Exception as e:
         print("Error Backend Flask:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
     
-    
-
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
