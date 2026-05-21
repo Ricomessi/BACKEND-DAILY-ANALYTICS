@@ -130,7 +130,40 @@ def get_monthly_analytics():
     except Exception as e:
         print("Error Get Monthly Analytics:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
-
+    
+@app.route('/api/rules', methods=['GET', 'POST', 'DELETE'])
+def manage_rules():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    if request.method == 'GET':
+        cur.execute("SELECT * FROM anomaly_rules ORDER BY id ASC")
+        rules = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "data": rules})
+        
+    elif request.method == 'POST':
+        data = request.json
+        cur.execute("""
+            INSERT INTO anomaly_rules (field, operator, value, min_duration, severity, rule_type, message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (data['field'], data['operator'], data['value'], data.get('min_duration', 0), 
+              data['severity'], data['rule_type'], data['message']))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "Rule ditambahkan!"})
+        
+    elif request.method == 'DELETE':
+        rule_id = request.args.get('id')
+        if rule_id:
+            cur.execute("DELETE FROM anomaly_rules WHERE id = %s", (rule_id,))
+            conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "message": "Rule dihapus!"})
+        
 @app.route('/api/analytics/daily', methods=['GET'])
 def get_daily_analytics():
     try:
@@ -138,8 +171,9 @@ def get_daily_analytics():
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         cur.execute("""
-            SELECT 
+           SELECT 
                 EXTRACT(HOUR FROM start_time) as hour,
+                EXTRACT(MINUTE FROM start_time) as minute,  -- <--- TAMBAHKAN BARIS INI
                 camera_id, emotion, is_attentive, yaw, pitch, yolo_action,
                 duration
             FROM multimodal_tracking
@@ -312,7 +346,7 @@ def get_daily_analytics():
                 else: buckets[">60s"] += 1
         gaze_segments = [{"range": k, "count": v} for k, v in buckets.items()]
         
-        # --- 8. Cross-Modal Features (UNTUK FRONTEND) ---
+# --- 8. Cross-Modal Features (UNTUK FRONTEND) ---
         actions_list = ["Standing", "Walking", "Sitting", "Fallen / Lying", "Drinking"]
         emotions_list = ["Neutral", "Happy", "Sad", "Angry", "Fearful"]
         
@@ -322,6 +356,12 @@ def get_daily_analytics():
         anomaly_timeline = []
         
         camera_history = {}
+
+        # =======================================================
+        # ⚙️ AMBIL RULE ENGINE DARI DATABASE (TARUH DI LUAR LOOP!)
+        # =======================================================
+        cur.execute("SELECT * FROM anomaly_rules WHERE is_active = TRUE")
+        db_rules = cur.fetchall()
         
         for r in rows:
             # -- Transition Matrix --
@@ -345,7 +385,6 @@ def get_daily_analytics():
                 emotion_action_matrix[e_idx][a_idx] += 1
                 
             # -- Scatter Data (Attention vs Emotion) --
-            # Hanya ambil sampel untuk scatter agar tidak berat di render frontend
             if len(scatter_data) < 200:
                  att_val = 100 if r['is_attentive'] else (0 if not r['duration'] else min((r['duration']*10), 80))
                  e_idx = emotions_list.index(emo) if emo in emotions_list else 0
@@ -353,29 +392,50 @@ def get_daily_analytics():
                      "attention": att_val,
                      "emotion": emo,
                      "emotionIndex": e_idx,
-                     "size": (r['duration'] or 1) * 20 # Ukuran dot berdasarkan durasi
+                     "size": (r['duration'] or 1) * 20 
                  })
                  
-            # -- Anomaly Timeline --
-            # Tangkap anomali: Fallen atau Angry/Fearful (sesuai Master Class)
-            if act == 'Fallen / Lying':
-                anomaly_timeline.append({
-                    "hour": f"{int(r['hour']):02d}:{np.random.randint(0, 59):02d}", # Mock minute since DB only has hour
-                    "severity": "high",
-                    "type": "Safety",
-                    "label": f"Fallen detected on {cam}"
-                })
-            elif emo in ['Angry', 'Fearful']:
-                anomaly_timeline.append({
-                    "hour": f"{int(r['hour']):02d}:{np.random.randint(0, 59):02d}",
-                    "severity": "medium",
-                    "type": "Emotion",
-                    "label": f"{emo} expression on {cam}"
-                })
+            # =======================================================
+            # ⚙️ EKSEKUSI RULE ENGINE KE DATA (DI DALAM LOOP)
+            # =======================================================
+            for rule in db_rules:
+                is_anomaly = False
+                field_value = str(r.get(rule['field'], "")).strip() 
+                
+                # 1. Cek Operator Dasar
+                if rule['operator'] == '==':
+                    if field_value.lower() == str(rule['value']).strip().lower():
+                        is_anomaly = True
+                elif rule['operator'] == 'in':
+                    valid_values = [v.strip().lower() for v in rule['value'].split(',')]
+                    if field_value.lower() in valid_values:
+                        is_anomaly = True
+                    
+                # 2. Cek Syarat Durasi
+                if is_anomaly and rule['min_duration'] > 0:
+                    dur = r['duration'] or 0
+                    if dur < rule['min_duration']:
+                        is_anomaly = False
+                
+                # 3. Masukkan ke Timeline
+                if is_anomaly:
+                    jam = int(r['hour'])
+                    menit = int(r.get('minute', 0))
+                    
+                    anomaly_timeline.append({
+                        "hour": f"{jam:02d}:{menit:02d}",
+                        "severity": rule['severity'],
+                        "type": rule['rule_type'],
+                        "label": rule['message'].format(
+                            cam=r['camera_id'], 
+                            emo=r['emotion'], 
+                            act=r['yolo_action'], 
+                            dur=r.get('duration', 0)
+                        )
+                    })
 
-        # Urutkan timeline berdasarkan jam
-        anomaly_timeline = sorted(anomaly_timeline, key=lambda x: x['hour'])[:15] # Ambil 15 terbaru
-        
+        # Urutkan timeline berdasarkan jam & menit
+        anomaly_timeline = sorted(anomaly_timeline, key=lambda x: x['hour'], reverse=True)[:15]
         # Normalisasi Emotion-Action Matrix untuk Heatmap (0.0 - 1.0)
         for i in range(len(emotion_action_matrix)):
             row_sum = sum(emotion_action_matrix[i])
