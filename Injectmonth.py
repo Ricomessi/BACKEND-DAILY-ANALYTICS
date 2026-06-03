@@ -8,11 +8,13 @@ from datetime import datetime, timedelta
 # ─── KONFIGURASI DATABASE ───
 DB_CONFIG = {
     "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASS", "~jr}J]0k1~,7e+]O"),
-    "database": os.environ.get("DB_NAME", "mbasystem"),
-    "host": os.environ.get("DB_HOST", "34.59.60.237"),
+    "password": os.environ.get("DB_PASS", "DezYnNbD\~2\S:|5"),
+    "database": os.environ.get("DB_NAME", "mbabatch2"),
+    "host": os.environ.get("DB_HOST", "136.119.162.109"),
     "port": os.environ.get("DB_PORT", "5432")
 }
+
+
 
 # ─── DATA KATEGORI ───
 CAMERAS = ["cam-01", "cam-02", "cam-03", "cam-04", "cam-05", "cam-06"]
@@ -101,7 +103,7 @@ def generate_dummy_data_for_date(target_date):
         
     return data
 
-def inject_month_data(year=2026, month=5):
+def inject_month_data(year=2026, month=6):
     """Mengeksekusi generasi data untuk satu bulan penuh dan menginjeksinya ke DB"""
     print(f"🚀 Memulai injeksi data untuk bulan {month}-{year}...")
     
@@ -153,4 +155,4 @@ def inject_month_data(year=2026, month=5):
         if conn: conn.close()
 
 if __name__ == "__main__":
-    inject_month_data(year=2026, month=5)
+    inject_month_data(year=2026, month=6)
