@@ -7,6 +7,7 @@ import math
 import numpy as np
 import os
 from scipy.stats import pearsonr, entropy
+from datetime import datetime, timezone, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -167,6 +168,12 @@ def manage_rules():
 @app.route('/api/analytics/daily', methods=['GET'])
 def get_daily_analytics():
     try:
+        target_date = request.args.get('date')
+        
+        # 2. Fallback: Jika parameter kosong, gunakan tanggal hari ini di zona waktu WIB (UTC+7)
+        if not target_date:
+            wib_timezone = timezone(timedelta(hours=7))
+            target_date = datetime.now(wib_timezone).strftime('%Y-%m-%d')
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -177,8 +184,8 @@ def get_daily_analytics():
                 camera_id, emotion, is_attentive, yaw, pitch, yolo_action,
                 duration
             FROM multimodal_tracking
-            WHERE DATE(start_time) = CURRENT_DATE
-        """)
+            WHERE DATE(start_time) = %s
+        """, (target_date,))
         rows = cur.fetchall()
 
         if not rows:
