@@ -182,7 +182,7 @@ def get_daily_analytics():
                 EXTRACT(HOUR FROM start_time) as hour,
                 EXTRACT(MINUTE FROM start_time) as minute,  -- <--- TAMBAHKAN BARIS INI
                 camera_id, emotion, is_attentive, yaw, pitch, yolo_action,
-                duration
+                CAST(duration AS FLOAT) as duration
             FROM multimodal_tracking
             WHERE DATE(start_time) = %s
         """, (target_date,))
