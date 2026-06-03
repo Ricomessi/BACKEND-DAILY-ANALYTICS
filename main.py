@@ -13,9 +13,9 @@ CORS(app)
 
 DB_CONFIG = {
     "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASS", "~jr}J]0k1~,7e+]O"),
-    "database": os.environ.get("DB_NAME", "mbasystem"),
-    "host": os.environ.get("DB_HOST", "34.59.60.237"),
+    "password": os.environ.get("DB_PASS", "DezYnNbD\~2\S:|5"),
+    "database": os.environ.get("DB_NAME", "mbabatch2"),
+    "host": os.environ.get("DB_HOST", "136.119.162.109"),
     "port": os.environ.get("DB_PORT", "5432")
 }
 
