@@ -12,16 +12,37 @@ from datetime import datetime, timezone, timedelta
 app = Flask(__name__)
 CORS(app)
 
-DB_CONFIG = {
-    "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASS", "DezYnNbD\~2\S:|5"),
-    "database": os.environ.get("DB_NAME", "mbabatch2"),
-    "host": os.environ.get("DB_HOST", "136.119.162.109"),
-    "port": os.environ.get("DB_PORT", "5432")
-}
-
 def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    # Ambil credentials dasar
+    db_user = os.environ.get("DB_USER", "postgres")
+    db_pass = os.environ.get("DB_PASS", "DezYnNbD\~2\S:|5")
+    db_name = os.environ.get("DB_NAME", "mbabatch2")
+    
+    # Cek apakah ada environment variable INSTANCE_CONNECTION_NAME
+    # (Ini akan dipakai saat jalan di Cloud Run)
+    instance_connection_name = os.environ.get("mbasystem:us-central1:mbabatch2")
+    
+    if instance_connection_name:
+        # MODE CLOUD RUN: Koneksi via Unix Socket
+        return psycopg2.connect(
+            user=db_user,
+            password=db_pass,
+            database=db_name,
+            host=f"/cloudsql/{instance_connection_name}"
+            # Port tidak perlu didefinisikan jika menggunakan Unix Socket
+        )
+    else:
+        # MODE LOKAL: Koneksi via TCP (IP Address biasa)
+        return psycopg2.connect(
+            user=db_user,
+            password=db_pass,
+            database=db_name,
+            host=os.environ.get("DB_HOST", "136.119.162.109"),
+            port=os.environ.get("DB_PORT", "5432")
+        )
+
+# def get_db_connection():
+#     return psycopg2.connect(**DB_CONFIG)
 
 YAW_MAP = {"CENTER": "FOKUS", "LEFT": "KIRI", "RIGHT": "KANAN"}
 PITCH_MAP = {"CENTER": "DATAR", "DOWN": "NUNDUK", "UP": "DANGAK"}

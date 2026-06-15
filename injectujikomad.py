@@ -5,12 +5,6 @@ from sqlalchemy import create_engine
 file_name = 'Electronics_Sales_Data.xlsx - Sales Data.csv'
 df = pd.read_csv(file_name)
 
-# --- KONFIGURASI KONEKSI CLOUD SQL ---
-db_user = 'postgres'            # Username database Anda (contoh: postgres atau root)
-db_password = 'p1imxTJ8OPK=1%Dg'   # Password database Anda
-db_host = '34.66.159.217'      # IP Public dari instance Cloud SQL Anda
-db_port = '5432'                # 5432 untuk PostgreSQL, 3306 untuk MySQL
-db_name = 'Electronics_Sales_Data'        # Nama database yang sudah Anda buat di Cloud SQL
 
 # 2. Membuat Engine Koneksi
 # Contoh di bawah ini untuk PostgreSQL.

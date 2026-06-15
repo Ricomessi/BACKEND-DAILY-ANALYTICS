@@ -5,14 +5,6 @@ import random
 import calendar
 from datetime import datetime, timedelta
 
-# ─── KONFIGURASI DATABASE ───
-DB_CONFIG = {
-    "user": os.environ.get("DB_USER", "postgres"),
-    "password": os.environ.get("DB_PASS", "DezYnNbD\~2\S:|5"),
-    "database": os.environ.get("DB_NAME", "mbabatch2"),
-    "host": os.environ.get("DB_HOST", "136.119.162.109"),
-    "port": os.environ.get("DB_PORT", "5432")
-}
 
 
 
