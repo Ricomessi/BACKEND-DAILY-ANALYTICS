@@ -20,7 +20,7 @@ def get_db_connection():
     
     # Cek apakah ada environment variable INSTANCE_CONNECTION_NAME
     # (Ini akan dipakai saat jalan di Cloud Run)
-    instance_connection_name = os.environ.get("mbasystem:us-central1:mbabatch2")
+    instance_connection_name = os.environ.get("INSTANCE_CONNECTION_NAME")
     
     if instance_connection_name:
         # MODE CLOUD RUN: Koneksi via Unix Socket
